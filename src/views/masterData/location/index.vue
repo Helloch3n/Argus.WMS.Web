@@ -17,8 +17,8 @@ import type { DataTableColumns } from 'naive-ui'
 import { getList as getWarehouseList, type WarehouseDto } from '@/api/masterData/warehouse'
 import { getByWarehouseId as getZonesByWarehouse, type ZoneDto } from '@/api/masterData/zone'
 import { getList, deleteLocation, type LocationDto } from '@/api/masterData/location'
-import LocationDialog from './components/LocationDialog.vue'
-import LocationBatchDialog from './components/LocationBatchDialog.vue'
+import LocationDialog, { type LocationDialogExpose } from './components/LocationDialog.vue'
+import LocationBatchDialog, { type LocationBatchDialogExpose } from './components/LocationBatchDialog.vue'
 
 const message = useMessage()
 const loading = ref(false)
@@ -156,8 +156,8 @@ async function fetchList() {
   }
 }
 
-const dialogRef = ref<InstanceType<typeof LocationDialog> | null>(null)
-const batchDialogRef = ref<InstanceType<typeof LocationBatchDialog> | null>(null)
+const dialogRef = ref<LocationDialogExpose | null>(null)
+const batchDialogRef = ref<LocationBatchDialogExpose | null>(null)
 
 function handleCreate() {
   if (!selectedZoneId.value || !selectedWarehouseId.value) {

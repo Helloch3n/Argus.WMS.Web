@@ -1,5 +1,9 @@
 <script lang="ts">
 export default { name: 'LocationBatchDialog' }
+
+export type LocationBatchDialogExpose = {
+  open: (zId: string, whId: string) => void
+}
 </script>
 
 <script setup lang="ts">

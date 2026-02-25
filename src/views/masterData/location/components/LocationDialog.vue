@@ -1,5 +1,9 @@
 <script lang="ts">
 export default { name: 'LocationDialog' }
+
+export type LocationDialogExpose = {
+  open: (params: { mode: 'create' | 'edit'; zoneId: string; warehouseId: string; row?: import('@/api/masterData/location').LocationDto }) => void
+}
 </script>
 
 <script setup lang="ts">
