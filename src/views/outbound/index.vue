@@ -1,0 +1,413 @@
+<template>
+  <div class="page">
+    <n-card>
+      <div class="toolbar">
+        <n-input v-model:value="searchKeyword" placeholder="订单号 / 客户" clearable @keyup.enter="loadOrders" />
+        <div>
+          <n-button type="primary" @click="openCreate">新建</n-button>
+        </div>
+      </div>
+      <n-data-table :columns="columns" :data="orders" :bordered="false" :loading="loading" />
+      <div class="pager">
+        <n-pagination
+          v-model:page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :item-count="pagination.itemCount"
+          show-size-picker
+          :page-sizes="[10,20,50]"
+          @update:page="loadOrders"
+          @update:page-size="handlePageSizeChange"
+        />
+      </div>
+    </n-card>
+
+    <n-modal v-model:show="createVisible" preset="card" title="新建出库单">
+      <n-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="100">
+        <n-form-item label="来源单号" path="sourceOrderNo">
+          <n-input v-model:value="createForm.sourceOrderNo" placeholder="请输入来源单号/外部单号" />
+        </n-form-item>
+        <n-form-item label="客户" path="customerName">
+          <n-input v-model:value="createForm.customerName" placeholder="请输入客户名称" />
+        </n-form-item>
+        <n-form-item label="明细">
+          <div class="items">
+            <div v-for="(item, index) in createForm.items" :key="index" class="item-row">
+              <n-input v-model:value="item.productCode" placeholder="产品编码" style="width: 220px" />
+              <n-input-number
+                v-model:value="item.targetLength"
+                :min="0"
+                :step="0.1"
+                placeholder="目标长度"
+                style="width: 160px"
+              />
+              <n-input-number
+                v-model:value="item.quantity"
+                :min="1"
+                :step="1"
+                placeholder="需求件数"
+                style="width: 140px"
+              />
+              <n-button size="tiny" type="error" tertiary @click="removeItem(index)">删除</n-button>
+            </div>
+            <n-button text @click="addItem">+ 新增行</n-button>
+          </div>
+        </n-form-item>
+      </n-form>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="createVisible = false">取消</n-button>
+          <n-button type="primary" :loading="creating" @click="submitCreate">提交</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <n-drawer v-model:show="drawerVisible" placement="right" :width="640" :show-mask="false">
+      <n-card title="订单详情" :bordered="false">
+        <n-space vertical :size="16">
+          <div>
+            <p>订单号：{{ currentOrder?.orderNo }}</p>
+            <p>来源单号：{{ currentOrder?.sourceOrderNo || '-' }}</p>
+            <p>客户：{{ currentOrder?.customerName }}</p>
+            <p>
+              状态：
+              <n-tag :type="currentOrder ? getStatusTagType(currentOrder.status) : 'default'">
+                {{ currentOrder ? getStatusLabel(currentOrder.status) : '-' }}
+              </n-tag>
+            </p>
+          </div>
+
+          <n-data-table
+            title="订单明细（展开查看拣货任务）"
+            :columns="detailItemColumns"
+            :data="drawerItemRows"
+            :loading="pickTaskLoading"
+            :bordered="false"
+            :single-line="false"
+          />
+        </n-space>
+      </n-card>
+    </n-drawer>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, h, reactive, ref } from 'vue'
+import {
+  NButton,
+  NCard,
+  NDataTable,
+  NDrawer,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NInput,
+  NInputNumber,
+  NModal,
+  NPagination,
+  NSpace,
+  NTag,
+  useMessage,
+} from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules, PaginationProps } from 'naive-ui'
+import * as outboundApi from '@/api/wms/outbound'
+import * as pickTaskApi from '@/api/wms/pickTask'
+
+const message = useMessage()
+
+const pagination = reactive<PaginationProps>({
+  page: 1,
+  pageSize: 10,
+  itemCount: 0,
+})
+
+const orders = ref<outboundApi.OutboundOrderDto[]>([])
+const loading = ref(false)
+const searchKeyword = ref('')
+const createVisible = ref(false)
+const drawerVisible = ref(false)
+const currentOrder = ref<outboundApi.OutboundOrderDto | null>(null)
+const creating = ref(false)
+const createFormRef = ref<FormInst | null>(null)
+const createForm = reactive({
+  sourceOrderNo: '',
+  customerName: '',
+  items: [{ productCode: '', targetLength: 0, quantity: 1 }],
+})
+const createRules: FormRules = {
+  customerName: [{ required: true, message: '请输入客户', trigger: ['blur', 'input'] }],
+}
+
+function getStatusMeta(rawStatus: number) {
+  switch (rawStatus) {
+    case 0:
+      return { label: '待分配', tagType: 'info' as const }
+    case 1:
+      return { label: '部分分配', tagType: 'warning' as const }
+    case 2:
+      return { label: '已分配', tagType: 'success' as const }
+    case 3:
+      return { label: '拣货中', tagType: 'primary' as const }
+    case 4:
+      return { label: '已发货/部分发货', tagType: 'success' as const }
+    case 5:
+      return { label: '已完成', tagType: 'default' as const }
+    default:
+      return { label: String(rawStatus), tagType: 'default' as const }
+  }
+}
+
+function getStatusLabel(status: outboundApi.OutboundOrderDto['status']) {
+  return getStatusMeta(Number(status)).label
+}
+
+function getStatusTagType(status: outboundApi.OutboundOrderDto['status']) {
+  return getStatusMeta(Number(status)).tagType
+}
+
+function formatDateTime(v?: string) {
+  if (!v) return '-'
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return v
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+const columns = computed<DataTableColumns<outboundApi.OutboundOrderDto>>(() => [
+  { title: '订单号', key: 'orderNo', minWidth: 180 },
+  { title: '客户', key: 'customerName', minWidth: 180 },
+  { title: '来源单号', key: 'sourceOrderNo', minWidth: 180, render: (row) => row.sourceOrderNo || '-' },
+  {
+    title: '状态',
+    key: 'status',
+    width: 120,
+    align: 'center',
+    render: (row) =>
+      h(
+        NTag,
+        { type: getStatusTagType(row.status), size: 'small' },
+        { default: () => getStatusLabel(row.status) },
+      ),
+  },
+  { title: '创建时间', key: 'creationTime', minWidth: 200, render: (row) => formatDateTime(row.creationTime) },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 200,
+    align: 'center',
+    render: (row) => [
+      (row.status === 0 || row.status === 1)
+        ? h(NButton, { size: 'small', type: 'primary', quaternary: true, onClick: () => handleAllocate(row) }, { default: () => '分配' })
+        : null,
+      h(NButton, { size: 'small', type: 'info', quaternary: true, onClick: () => openDrawer(row) }, { default: () => '详情' }),
+    ],
+  },
+])
+
+const pickTaskLoading = ref(false)
+
+type DrawerItemRow = outboundApi.OutboundOrderItemDto & {
+  childrenTasks: pickTaskApi.PickTaskDto[]
+}
+
+function resolvePickTaskStatus(raw: string | number): string {
+  if (raw === 'Pending' || raw === 0) return 'Pending'
+  if (raw === 'InProgress' || raw === 1) return 'InProgress'
+  if (raw === 'Completed' || raw === 2) return 'Completed'
+  if (raw === 'Cancelled' || raw === 3) return 'Cancelled'
+  return String(raw)
+}
+
+function getPickTaskStatusLabel(status: string): string {
+  if (status === 'Pending') return '待处理'
+  if (status === 'InProgress') return '执行中'
+  if (status === 'Completed') return '已完成'
+  if (status === 'Cancelled') return '已取消'
+  return status
+}
+
+function getPickTaskStatusTagType(status: string): 'default' | 'info' | 'success' | 'warning' | 'error' {
+  if (status === 'Pending') return 'warning'
+  if (status === 'InProgress') return 'info'
+  if (status === 'Completed') return 'success'
+  if (status === 'Cancelled') return 'default'
+  return 'default'
+}
+
+const taskColumns: DataTableColumns<pickTaskApi.PickTaskDto> = [
+  { title: '盘号', key: 'reelNo', minWidth: 140, render: (row) => row.reelNo || '-' },
+  { title: '源库位', key: 'fromLocationCode', minWidth: 140, render: (row) => row.fromLocationCode || '-' },
+  {
+    title: '目标长度',
+    key: 'targetLength',
+    width: 140,
+    align: 'right',
+    render: (row) => `${row.targetLength ?? 0} 米`,
+  },
+  {
+    title: '库存ID短码',
+    key: 'inventoryIdShort',
+    width: 130,
+    render: (row) => (row.inventoryId ? row.inventoryId.slice(0, 8) : '-'),
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 110,
+    align: 'center',
+    render: (row) => {
+      const status = resolvePickTaskStatus(row.status)
+      return h(
+        NTag,
+        { size: 'small', type: getPickTaskStatusTagType(status) },
+        { default: () => getPickTaskStatusLabel(status) },
+      )
+    },
+  },
+]
+
+const detailItemColumns: DataTableColumns<DrawerItemRow> = [
+  {
+    type: 'expand',
+    renderExpand: (row) => {
+      if (!row.childrenTasks?.length) {
+        return h(
+          'div',
+          { style: { padding: '8px 12px' } },
+          h(NEmpty, { description: '暂无分配任务', size: 'small' }),
+        )
+      }
+      return h(NDataTable, {
+        size: 'small',
+        bordered: false,
+        columns: taskColumns,
+        data: row.childrenTasks,
+        singleLine: false,
+      })
+    },
+  },
+  { title: '产品编码', key: 'productCode', minWidth: 160 },
+  { title: '目标长度', key: 'targetLength', width: 120, align: 'right' },
+  {
+    title: '需求/已分配件数',
+    key: 'qty',
+    width: 160,
+    align: 'right',
+    render: (row) => `${row.quantity ?? 0} / ${row.allocatedQuantity ?? 0}`,
+  },
+]
+
+const drawerItemRows = ref<DrawerItemRow[]>([])
+
+const buildDrawerItemRows = (
+  order: outboundApi.OutboundOrderDto | null,
+  tasks: pickTaskApi.PickTaskDto[],
+): DrawerItemRow[] => {
+  const taskMap = new Map<string, pickTaskApi.PickTaskDto[]>()
+
+  for (const task of tasks) {
+    const itemId = task.outboundOrderItemId
+    if (!itemId) continue
+    const list = taskMap.get(itemId) ?? []
+    list.push(task)
+    taskMap.set(itemId, list)
+  }
+
+  return (order?.items ?? []).map((item) => ({
+    ...item,
+    childrenTasks: item.id ? (taskMap.get(item.id) ?? []) : [],
+  }))
+}
+
+
+async function openDrawer(row: outboundApi.OutboundOrderDto) {
+  loading.value = true
+  pickTaskLoading.value = true
+  try {
+    const order = await outboundApi.get(row.id)
+    const pickTasks = await pickTaskApi.getTasksByOrderId(order.id)
+
+    currentOrder.value = order
+    drawerItemRows.value = buildDrawerItemRows(order, pickTasks)
+    drawerVisible.value = true
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '加载详情失败')
+    drawerItemRows.value = []
+  } finally {
+    loading.value = false
+    pickTaskLoading.value = false
+  }
+}
+
+function addItem() {
+  createForm.items.push({ productCode: '', targetLength: 0, quantity: 1 })
+}
+
+function removeItem(index: number) {
+  if (createForm.items.length <= 1) return
+  createForm.items.splice(index, 1)
+}
+
+async function loadOrders() {
+  loading.value = true
+  try {
+    const page = pagination.page ?? 1
+    const pageSize = pagination.pageSize ?? 10
+    const res = await outboundApi.getList({
+      maxResultCount: pageSize,
+      skipCount: (page - 1) * pageSize,
+      filter: searchKeyword.value || undefined,
+    })
+    orders.value = res.items ?? []
+    pagination.itemCount = res.totalCount ?? 0
+  } finally {
+    loading.value = false
+  }
+}
+
+function handlePageSizeChange(size: number) {
+  pagination.pageSize = size
+  pagination.page = 1
+  loadOrders()
+}
+
+function openCreate() {
+  createVisible.value = true
+}
+
+async function submitCreate() {
+  try {
+    await createFormRef.value?.validate()
+  } catch {
+    return
+  }
+  creating.value = true
+  try {
+    await outboundApi.create({
+      sourceOrderNo: createForm.sourceOrderNo,
+      customerName: createForm.customerName,
+      items: createForm.items.map(({ productCode, targetLength, quantity }) => ({
+        productCode,
+        targetLength: Number(targetLength),
+        quantity: Number(quantity),
+      })),
+    })
+    message.success('新建成功')
+    createVisible.value = false
+    loadOrders()
+  } finally {
+    creating.value = false
+  }
+}
+
+async function handleAllocate(row: outboundApi.OutboundOrderDto) {
+  try {
+    await outboundApi.allocate(row.id)
+    message.success('分配成功')
+    loadOrders()
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '分配失败')
+  }
+}
+
+loadOrders()
+</script>
