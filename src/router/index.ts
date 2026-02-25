@@ -88,6 +88,18 @@ const router = createRouter({
               meta: { title: '仓库管理', requiresAuth: true },
             },
             {
+              path: 'zone',
+              name: 'ZoneList',
+              component: () => import('@/views/masterData/zone/index.vue'),
+              meta: { title: '库区管理', requiresAuth: true },
+            },
+            {
+              path: 'location',
+              name: 'LocationList',
+              component: () => import('@/views/masterData/location/index.vue'),
+              meta: { title: '库位管理', requiresAuth: true },
+            },
+            {
               path: 'reel',
               name: 'ReelList',
               component: () => import('@/views/masterData/reel/index.vue'),

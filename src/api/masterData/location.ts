@@ -29,6 +29,7 @@ export interface LocationDto {
   allowMixedBatches: boolean
 }
 
+/** 创建/更新 DTO — 不含 status（后端不接受外部传入 status） */
 export interface CreateUpdateLocationDto {
   zoneId: string
   warehouseId: string
@@ -41,13 +42,13 @@ export interface CreateUpdateLocationDto {
   maxVolume: number
   maxReelCount: number
   type: number
-  status: number
   allowMixedProducts: boolean
   allowMixedBatches: boolean
 }
 
 export interface BatchCreateLocationDto {
   zoneId: string
+  warehouseId: string
   aislePrefix: string
   rackCount: number
   levelCount: number
@@ -74,7 +75,6 @@ export async function get(id: string) {
 }
 
 export async function create(data: CreateUpdateLocationDto) {
-  debugger
   const res = await request.post<LocationDto>(baseUrl, data)
   return res.data
 }

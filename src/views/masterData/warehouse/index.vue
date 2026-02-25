@@ -1,82 +1,163 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref } from 'vue'
-import { NCard, NEmpty, NLayout, NLayoutContent, NLayoutSider } from 'naive-ui'
+import { h, onMounted, ref } from 'vue'
+import {
+  NButton,
+  NCard,
+  NDataTable,
+  NForm,
+  NFormItem,
+  NInput,
+  NModal,
+  NPopconfirm,
+  NSpace,
+  useMessage,
+} from 'naive-ui'
+import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
+import {
+  getList,
+  create,
+  update,
+  remove,
+  type WarehouseDto,
+  type CreateUpdateWarehouseDto,
+} from '@/api/masterData/warehouse'
 
-import WarehouseTree from './components/WarehouseTree.vue'
-const LocationTable = defineAsyncComponent(() => import('./components/LocationTable.vue'))
+const message = useMessage()
+const loading = ref(false)
+const list = ref<WarehouseDto[]>([])
 
-type ZoneSelectPayload = { id: string; name: string; warehouseId?: string; warehouseCode?: string; warehouseName?: string }
+const columns: DataTableColumns<WarehouseDto> = [
+  { title: '仓库编码', key: 'code', minWidth: 120 },
+  { title: '仓库名称', key: 'name', minWidth: 160 },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 160,
+    align: 'center',
+    render: (row) =>
+      h(NSpace, { size: 8, justify: 'center' }, {
+        default: () => [
+          h(
+            NButton,
+            {
+              size: 'small',
+              type: 'primary',
+              quaternary: true,
+              onClick: () => handleEdit(row),
+            },
+            { default: () => '编辑' },
+          ),
+          h(
+            NPopconfirm,
+            {
+              onPositiveClick: () => handleDelete(row.id!),
+            },
+            {
+              trigger: () =>
+                h(
+                  NButton,
+                  { size: 'small', type: 'error', quaternary: true },
+                  { default: () => '删除' },
+                ),
+              default: () => '确定删除该仓库吗？删除前请确保已清空其下所有库区。',
+            },
+          ),
+        ],
+      }),
+  },
+]
 
-const currentZoneId = ref<string | null>(null)
-const currentZoneName = ref<string>('')
-const currentWarehouseId = ref<string | undefined>(undefined)
-const currentWarehouseCode = ref<string | undefined>(undefined)
-const currentWarehouseName = ref<string | undefined>(undefined)
-
-function handleZoneSelect(payload: ZoneSelectPayload) {
-  currentZoneId.value = payload.id
-  currentZoneName.value = payload.name
-  currentWarehouseId.value = payload.warehouseId ?? undefined
-  currentWarehouseCode.value = payload.warehouseCode ?? undefined
-  currentWarehouseName.value = payload.warehouseName ?? undefined
+async function fetchList() {
+  loading.value = true
+  try {
+    const res = await getList()
+    list.value = res.items ?? []
+  } finally {
+    loading.value = false
+  }
 }
+
+const dialogVisible = ref(false)
+const dialogMode = ref<'create' | 'edit'>('create')
+const editId = ref<string | null>(null)
+const formRef = ref<FormInst | null>(null)
+const form = ref<CreateUpdateWarehouseDto>({ code: '', name: '' })
+
+const rules: FormRules = {
+  code: [{ required: true, message: '请输入仓库编码', trigger: ['input', 'blur'] }],
+  name: [{ required: true, message: '请输入仓库名称', trigger: ['input', 'blur'] }],
+}
+
+function handleCreate() {
+  dialogMode.value = 'create'
+  editId.value = null
+  form.value = { code: '', name: '' }
+  dialogVisible.value = true
+}
+
+function handleEdit(row: WarehouseDto) {
+  dialogMode.value = 'edit'
+  editId.value = row.id!
+  form.value = { code: row.code, name: row.name }
+  dialogVisible.value = true
+}
+
+async function handleSubmit() {
+  await formRef.value?.validate()
+  if (dialogMode.value === 'edit' && editId.value) {
+    await update(editId.value, form.value)
+    message.success('更新成功')
+  } else {
+    await create(form.value)
+    message.success('创建成功')
+  }
+  dialogVisible.value = false
+  await fetchList()
+}
+
+async function handleDelete(id: string) {
+  try {
+    await remove(id)
+    message.success('删除成功')
+    await fetchList()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error?.message ?? '删除失败')
+  }
+}
+
+onMounted(fetchList)
 </script>
 
 <template>
-  <n-card class="warehouse-page" :bordered="false">
-    <n-layout class="warehouse-container" has-sider>
-      <n-layout-sider width="280" class="aside" bordered>
-        <WarehouseTree @zone-select="handleZoneSelect" />
-      </n-layout-sider>
-      <div class="divider" />
-      <n-layout-content class="main-content">
-        <LocationTable
-          v-if="currentZoneId"
-          :zone-id="currentZoneId"
-          :zone-name="currentZoneName"
-          :warehouse-id="currentWarehouseId"
-          :warehouse-code="currentWarehouseCode"
-          :warehouse-name="currentWarehouseName"
-        />
-        <div v-else class="empty-wrap">
-          <n-empty description="请从左侧选择一个库区" />
-        </div>
-      </n-layout-content>
-    </n-layout>
+  <n-card title="仓库管理">
+    <template #header-extra>
+      <n-button type="primary" @click="handleCreate">新建仓库</n-button>
+    </template>
+
+    <n-data-table :loading="loading" :columns="columns" :data="list" :bordered="false" />
+
+    <n-modal v-model:show="dialogVisible">
+      <n-card
+        :title="dialogMode === 'create' ? '新建仓库' : '编辑仓库'"
+        style="width: 500px"
+        closable
+        @close="dialogVisible = false"
+      >
+        <n-form ref="formRef" :model="form" :rules="rules" label-placement="left" label-width="80">
+          <n-form-item label="编码" path="code">
+            <n-input v-model:value="form.code" placeholder="如: WH01" />
+          </n-form-item>
+          <n-form-item label="名称" path="name">
+            <n-input v-model:value="form.name" placeholder="如: 主仓库" />
+          </n-form-item>
+        </n-form>
+        <template #action>
+          <n-space justify="end">
+            <n-button @click="dialogVisible = false">取消</n-button>
+            <n-button type="primary" @click="handleSubmit">确定</n-button>
+          </n-space>
+        </template>
+      </n-card>
+    </n-modal>
   </n-card>
 </template>
-
-<style scoped>
-.warehouse-page {
-  height: calc(100vh - 100px);
-  display: flex;
-  flex-direction: column;
-}
-
-.warehouse-container {
-  height: 100%;
-}
-
-.aside {
-  background: #ffffff;
-  overflow: auto;
-}
-
-.main-content {
-  background: #ffffff;
-  overflow: auto;
-  padding: 16px;
-}
-
-.divider {
-  width: 1px;
-  background: #f1f5f9;
-}
-
-.empty-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-}
-</style>
