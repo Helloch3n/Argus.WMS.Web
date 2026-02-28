@@ -12,9 +12,13 @@ export interface PagedAndSortedResultRequestDto {
 }
 
 export interface WarehouseDto {
-  id?: string
+  id: string
   code: string
   name: string
+  creationTime?: string
+  creatorId?: string
+  lastModificationTime?: string
+  lastModifierId?: string
 }
 
 export interface CreateUpdateWarehouseDto {
@@ -22,19 +26,45 @@ export interface CreateUpdateWarehouseDto {
   name: string
 }
 
-export interface GetWarehouseListParams extends PagedAndSortedResultRequestDto {
+export interface WarehousePagedQueryDto extends PagedAndSortedResultRequestDto {
   filter?: string
+  warehouseCode?: string
+  warehouseName?: string
 }
+
+export interface WarehouseLocationDto {
+  id?: string
+  code: string
+}
+
+export interface WarehouseZoneWithLocationsDto {
+  id?: string
+  code: string
+  name?: string
+  locations?: WarehouseLocationDto[]
+}
+
+export interface WarehouseWithDetailsDto extends WarehouseDto {
+  zones?: WarehouseZoneWithLocationsDto[]
+}
+
+// 兼容旧命名
+export type GetWarehouseListParams = WarehousePagedQueryDto
 
 const baseUrl = '/api/app/warehouse'
 
-export async function getList(params?: GetWarehouseListParams) {
+export async function getList(params?: WarehousePagedQueryDto) {
   const res = await request.get<PagedResultDto<WarehouseDto>>(baseUrl, { params })
   return res.data
 }
 
 export async function get(id: string) {
   const res = await request.get<WarehouseDto>(`${baseUrl}/${id}`)
+  return res.data
+}
+
+export async function getWithDetails(id: string) {
+  const res = await request.get<WarehouseWithDetailsDto>(`${baseUrl}/${id}/with-details`)
   return res.data
 }
 

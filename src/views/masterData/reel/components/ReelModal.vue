@@ -25,18 +25,16 @@ type ReelRow = {
   id?: string
   reelNo?: string
   name?: string
-  type?: number
+  size?: string
   selfWeight?: number
-  maxWeight?: number
   currentLocationId?: string
 }
 
 type ReelFormModel = {
   reelNo: string
   name: string
-  type: number | null
+  size: string
   selfWeight: number | null
-  maxWeight: number | null
   currentLocationId: string | null
 }
 
@@ -54,15 +52,13 @@ const formRef = ref<FormInst | null>(null)
 const form = reactive<ReelFormModel>({
   reelNo: '',
   name: '',
-  type: 0,
+  size: '',
   selfWeight: null,
-  maxWeight: null,
   currentLocationId: null,
 })
 
 const rules = computed<FormRules>(() => ({
   name: [{ required: true, message: '请输入名称', trigger: ['input', 'blur'] }],
-  type: [{ required: true, type: 'number', message: '请选择类型', trigger: ['change', 'blur'] }],
   selfWeight: [{ required: true, type: 'number', message: '请输入皮重', trigger: ['input', 'blur'] }],
   currentLocationId: [
     {
@@ -77,21 +73,14 @@ const rules = computed<FormRules>(() => ({
   ],
 }))
 
-const typeOptions: SelectOption[] = [
-  { label: '铁', value: 0 },
-  { label: '木', value: 1 },
-  { label: '塑料', value: 2 },
-]
-
 const locationOptions = ref<SelectOption[]>([])
 const locationLoading = ref(false)
 
 async function resetForm() {
   form.reelNo = ''
   form.name = ''
-  form.type = 0
+  form.size = ''
   form.selfWeight = null
-  form.maxWeight = null
   form.currentLocationId = null
   locationOptions.value = []
 }
@@ -102,7 +91,7 @@ async function loadLocationOptions(keyword?: string) {
     const params: GetLocationListParams = {
       maxResultCount: 20,
       skipCount: 0,
-      filter: keyword?.trim() || undefined,
+      locationCode: keyword?.trim() || undefined,
     }
     const data = await getList(params)
     const items = data.items ?? []
@@ -121,9 +110,8 @@ function open(row?: ReelRow) {
     editingId.value = row.id
     form.reelNo = row.reelNo ?? ''
     form.name = row.name ?? ''
-    form.type = typeof row.type === 'number' ? row.type : null
+    form.size = row.size ?? ''
     form.selfWeight = typeof row.selfWeight === 'number' ? row.selfWeight : null
-    form.maxWeight = typeof row.maxWeight === 'number' ? row.maxWeight : null
     form.currentLocationId = row.currentLocationId ?? null
   } else {
     mode.value = 'create'
@@ -150,9 +138,8 @@ async function handleSubmit() {
     const payload: CreateUpdateReelDto = {
       reelNo: form.reelNo || undefined,
       name: form.name,
-      type: form.type ?? 0,
+      size: form.size || undefined,
       selfWeight: form.selfWeight ?? 0,
-      maxWeight: form.maxWeight ?? undefined,
       currentLocationId: form.currentLocationId ?? undefined,
     }
 
@@ -197,16 +184,12 @@ const showLocation = computed(() => mode.value === 'create')
         <n-input v-model:value="form.name" />
       </n-form-item>
 
-      <n-form-item label="类型" path="type">
-        <n-select v-model:value="form.type" :options="typeOptions" placeholder="请选择类型" />
+      <n-form-item label="规格">
+        <n-input v-model:value="form.size" placeholder="请输入规格" />
       </n-form-item>
 
       <n-form-item label="皮重(kg)" path="selfWeight">
         <n-input-number v-model:value="form.selfWeight" :min="0" />
-      </n-form-item>
-
-      <n-form-item label="最大承重(kg)">
-        <n-input-number v-model:value="form.maxWeight" :min="0" />
       </n-form-item>
 
       <n-form-item v-if="showLocation" label="初始位置">

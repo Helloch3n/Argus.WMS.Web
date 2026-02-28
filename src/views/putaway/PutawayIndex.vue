@@ -1,16 +1,13 @@
-<!-- filepath: src/views/putaway/index.vue -->
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from 'vue'
 import {
   NButton,
-  NCard,
   NDataTable,
   NForm,
   NFormItem,
   NInput,
   NModal,
   NSelect,
-  NSpace,
   NTabPane,
   NTabs,
   NTag,
@@ -20,6 +17,11 @@ import {
 import type { DataTableColumns, FormInst, FormRules, SelectOption } from 'naive-ui'
 
 import * as PutawayService from '@/api/putaway/putaway'
+import BaseCrudPage from '@/components/BaseCrudPage.vue'
+import TableColumnManager from '@/components/TableColumnManager.vue'
+import { useColumnConfig } from '@/composables/useColumnConfig'
+import { withResizable } from '@/utils/table'
+import { compareSortValue } from '@/utils/tableColumn'
 
 type AvailableReelRow = PutawayService.AvailableReelDto
 
@@ -44,6 +46,31 @@ const taskStatusOptions: SelectOption[] = [
   { label: '已完成', value: 'Completed' },
   { label: '已取消', value: 'Cancelled' },
 ]
+
+const sourceColumnConfig = useColumnConfig({
+  storageKey: 'putaway-source-column-settings-v1',
+  preferredKeys: ['reelNo', 'displayProductName', 'locationCode', 'displayQuantity'],
+  resolveTitle: (key) => {
+    if (key === 'reelNo') return '盘号'
+    if (key === 'displayProductName') return '物料名称'
+    if (key === 'locationCode') return '当前位置'
+    if (key === 'displayQuantity') return '数量'
+    return key
+  },
+})
+
+const taskColumnConfig = useColumnConfig({
+  storageKey: 'putaway-task-column-settings-v1',
+  preferredKeys: ['taskNo', 'reelNo', 'fromLocationCode', 'status', 'creationTime'],
+  resolveTitle: (key) => {
+    if (key === 'taskNo') return '任务号'
+    if (key === 'reelNo') return '盘号'
+    if (key === 'fromLocationCode') return '源库位'
+    if (key === 'status') return '状态'
+    if (key === 'creationTime') return '创建时间'
+    return key
+  },
+})
 
 const completeModalVisible = ref(false)
 const completeSubmitting = ref(false)
@@ -187,11 +214,28 @@ async function onConfirmComplete() {
 }
 
 function onQuerySource() {
+  sourceFilter.value = sourceFilter.value.trim()
   loadSource()
 }
+
+function onResetSource() {
+  sourceFilter.value = ''
+  loadSource()
+}
+
 function onRefreshTasks() {
   loadTasks()
 }
+
+function onQueryTasks() {
+  loadTasks()
+}
+
+function onResetTasks() {
+  taskStatus.value = null
+  loadTasks()
+}
+
 function onTabChange(name: string) {
   activeTab.value = name as 'source' | 'tasks'
   if (activeTab.value === 'tasks' && taskRows.value.length === 0) {
@@ -199,29 +243,50 @@ function onTabChange(name: string) {
   }
 }
 
-const sourceColumns = computed<DataTableColumns<AvailableReelRow>>(() => [
-  { title: '盘号', key: 'reelNo', minWidth: 160, render: (row: AvailableReelRow) => row.reelNo || '-' },
-  {
-    title: '物料名称',
+function switchTab(tab: 'source' | 'tasks') {
+  if (activeTab.value === tab) return
+  onTabChange(tab)
+}
+
+const sourceColumnMap: Record<string, DataTableColumns<AvailableReelRow>[number]> = {
+  reelNo: {
+    title: sourceColumnConfig.createDraggableTitle('reelNo', '盘号'),
+    key: 'reelNo',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.reelNo, b.reelNo),
+    render: (row: AvailableReelRow) => row.reelNo || '-',
+  },
+  displayProductName: {
+    title: sourceColumnConfig.createDraggableTitle('displayProductName', '物料名称'),
     key: 'displayProductName',
     minWidth: 220,
+    sorter: (a, b) => compareSortValue(a.displayProductName, b.displayProductName),
     render: (row: AvailableReelRow) => row.displayProductName || '-',
   },
-  {
-    title: '当前位置',
+  locationCode: {
+    title: sourceColumnConfig.createDraggableTitle('locationCode', '当前位置'),
     key: 'locationCode',
     minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.locationCode, b.locationCode),
     render: (row: AvailableReelRow) => row.locationCode || '-',
   },
-  {
-    title: '数量',
+  displayQuantity: {
+    title: sourceColumnConfig.createDraggableTitle('displayQuantity', '数量'),
     key: 'displayQuantity',
     width: 140,
+    sorter: (a, b) => compareSortValue(a.displayQuantity, b.displayQuantity),
     render: (row: AvailableReelRow) => {
       const parsed = parseDisplayQuantity(row.displayQuantity)
       return parsed.quantity ?? row.displayQuantity ?? '-'
     },
   },
+}
+
+const sourceColumns = computed<DataTableColumns<AvailableReelRow>>(() => withResizable([
+  ...sourceColumnConfig.columnSettings.value
+    .filter((item) => item.visible)
+    .map((item) => sourceColumnMap[item.key])
+    .filter((item): item is DataTableColumns<AvailableReelRow>[number] => Boolean(item)),
   {
     title: '操作',
     key: 'actions',
@@ -234,22 +299,36 @@ const sourceColumns = computed<DataTableColumns<AvailableReelRow>>(() => [
         { default: () => '生成任务' },
       ),
   },
-])
+]))
 
-const taskColumns = computed<DataTableColumns<TaskRow>>(() => [
-  { title: '任务号', key: 'taskNo', minWidth: 180, render: (row: TaskRow) => row.taskNo || '-' },
-  { title: '盘号', key: 'reelNo', minWidth: 160, render: (row: TaskRow) => row.reelNo || '-' },
-  {
-    title: '源库位',
+const taskColumnMap: Record<string, DataTableColumns<TaskRow>[number]> = {
+  taskNo: {
+    title: taskColumnConfig.createDraggableTitle('taskNo', '任务号'),
+    key: 'taskNo',
+    minWidth: 180,
+    sorter: (a, b) => compareSortValue(a.taskNo, b.taskNo),
+    render: (row: TaskRow) => row.taskNo || '-',
+  },
+  reelNo: {
+    title: taskColumnConfig.createDraggableTitle('reelNo', '盘号'),
+    key: 'reelNo',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.reelNo, b.reelNo),
+    render: (row: TaskRow) => row.reelNo || '-',
+  },
+  fromLocationCode: {
+    title: taskColumnConfig.createDraggableTitle('fromLocationCode', '源库位'),
     key: 'fromLocationCode',
     minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.fromLocationCode, b.fromLocationCode),
     render: (row: TaskRow) => row.fromLocationCode || '-',
   },
-  {
-    title: '状态',
+  status: {
+    title: taskColumnConfig.createDraggableTitle('status', '状态'),
     key: 'status',
     width: 130,
     align: 'center',
+    sorter: (a, b) => compareSortValue(getStatusText(getStatus(a.status)), getStatusText(getStatus(b.status))),
     render: (row: TaskRow) => {
       const status = getStatus(row.status)
       return h(
@@ -259,12 +338,20 @@ const taskColumns = computed<DataTableColumns<TaskRow>>(() => [
       )
     },
   },
-  {
-    title: '创建时间',
+  creationTime: {
+    title: taskColumnConfig.createDraggableTitle('creationTime', '创建时间'),
     key: 'creationTime',
     minWidth: 180,
+    sorter: (a, b) => compareSortValue(a.creationTime, b.creationTime),
     render: (row: TaskRow) => formatDateTime(row.creationTime),
   },
+}
+
+const taskColumns = computed<DataTableColumns<TaskRow>>(() => withResizable([
+  ...taskColumnConfig.columnSettings.value
+    .filter((item) => item.visible)
+    .map((item) => taskColumnMap[item.key])
+    .filter((item): item is DataTableColumns<TaskRow>[number] => Boolean(item)),
   {
     title: '操作',
     key: 'actions',
@@ -281,37 +368,59 @@ const taskColumns = computed<DataTableColumns<TaskRow>>(() => [
       )
     },
   },
-])
+]))
+
+function handleSourceColumnConfigShowChange(value: boolean) {
+  sourceColumnConfig.showColumnConfig.value = value
+}
+
+function handleTaskColumnConfigShowChange(value: boolean) {
+  taskColumnConfig.showColumnConfig.value = value
+}
+
+function handleSourceColumnVisibleChange(key: string, visible: boolean) {
+  if (!sourceColumnConfig.handleVisibleChange(key, visible)) {
+    message.warning('至少保留一个展示字段')
+  }
+}
+
+function handleTaskColumnVisibleChange(key: string, visible: boolean) {
+  if (!taskColumnConfig.handleVisibleChange(key, visible)) {
+    message.warning('至少保留一个展示字段')
+  }
+}
 
 onMounted(async () => {
+  sourceColumnConfig.loadColumnSettings()
+  taskColumnConfig.loadColumnSettings()
   await loadSource()
 })
 </script>
 
 <template>
-  <n-card :bordered="false">
-    <n-tabs type="line" :value="activeTab" @update:value="onTabChange">
-      <n-tab-pane name="source" tab="待上架资源">
-        <div class="toolbar">
-          <n-space>
+  <BaseCrudPage>
+    <template #search>
+      <n-form inline class="crud-search-form">
+        <template v-if="activeTab === 'source'">
+          <n-form-item>
             <n-input
               v-model:value="sourceFilter"
-              placeholder="扫描盘号或物料"
+              placeholder="请输入盘号或物料"
               clearable
               style="width: 320px"
               @keyup.enter="onQuerySource"
             />
+          </n-form-item>
+          <n-form-item class="crud-page-spacer" />
+          <n-form-item>
             <n-button type="primary" :loading="sourceLoading" @click="onQuerySource">查询</n-button>
-          </n-space>
-        </div>
-
-        <n-data-table :loading="sourceLoading" :columns="sourceColumns" :data="sourceRows" :bordered="false" />
-      </n-tab-pane>
-
-      <n-tab-pane name="tasks" tab="执行任务">
-        <div class="toolbar">
-          <n-space>
-            <n-button :loading="taskLoading" @click="onRefreshTasks">刷新</n-button>
+          </n-form-item>
+          <n-form-item>
+            <n-button :loading="sourceLoading" @click="onResetSource">重置</n-button>
+          </n-form-item>
+        </template>
+        <template v-else>
+          <n-form-item>
             <n-select
               v-model:value="taskStatus"
               :options="taskStatusOptions"
@@ -320,25 +429,68 @@ onMounted(async () => {
               style="width: 180px"
               @update:value="onRefreshTasks"
             />
-          </n-space>
-        </div>
+          </n-form-item>
+          <n-form-item class="crud-page-spacer" />
+          <n-form-item>
+            <n-button type="primary" :loading="taskLoading" @click="onQueryTasks">查询</n-button>
+          </n-form-item>
+          <n-form-item>
+            <n-button :loading="taskLoading" @click="onResetTasks">重置</n-button>
+          </n-form-item>
+        </template>
+      </n-form>
+    </template>
 
-        <n-data-table :loading="taskLoading" :columns="taskColumns" :data="taskRows" :bordered="false" />
+    <template #actions-left>
+      <div class="crud-action-main">
+        <n-button :type="activeTab === 'source' ? 'primary' : 'default'" @click="switchTab('source')">待上架资源</n-button>
+        <n-button :type="activeTab === 'tasks' ? 'primary' : 'default'" @click="switchTab('tasks')">执行任务</n-button>
+      </div>
+    </template>
+
+    <template #actions-right>
+      <div class="crud-action-tools">
+        <TableColumnManager
+          v-if="activeTab === 'source'"
+          :show="sourceColumnConfig.showColumnConfig.value"
+          :settings="sourceColumnConfig.columnSettings.value"
+          @update:show="handleSourceColumnConfigShowChange"
+          @visible-change="handleSourceColumnVisibleChange"
+        />
+        <TableColumnManager
+          v-else
+          :show="taskColumnConfig.showColumnConfig.value"
+          :settings="taskColumnConfig.columnSettings.value"
+          @update:show="handleTaskColumnConfigShowChange"
+          @visible-change="handleTaskColumnVisibleChange"
+        />
+      </div>
+    </template>
+
+    <template #data>
+      <n-tabs type="line" :value="activeTab" @update:value="onTabChange">
+      <n-tab-pane name="source" tab="待上架资源">
+        <n-data-table class="crud-table-flat" :loading="sourceLoading" :columns="sourceColumns" :data="sourceRows" :bordered="false" />
       </n-tab-pane>
-    </n-tabs>
+
+      <n-tab-pane name="tasks" tab="执行任务">
+        <n-data-table class="crud-table-flat" :loading="taskLoading" :columns="taskColumns" :data="taskRows" :bordered="false" />
+      </n-tab-pane>
+      </n-tabs>
+    </template>
 
     <n-modal v-model:show="completeModalVisible" preset="card" title="完成上架" style="width: 560px">
       <n-form ref="completeFormRef" :model="completeForm" :rules="completeRules" label-width="120">
-        <n-form-item label="任务号">
+        <n-form-item>
           <n-input :value="completeForm.taskNo" disabled />
         </n-form-item>
-        <n-form-item label="盘号">
+        <n-form-item>
           <n-input :value="completeForm.reelNo" disabled />
         </n-form-item>
-        <n-form-item label="目标库位" path="targetLocationCode">
+        <n-form-item path="targetLocationCode">
           <n-input
             v-model:value="completeForm.targetLocationCode"
-            placeholder="请扫描货架条码"
+            placeholder="请输入目标库位"
             autofocus
             @keyup.enter="onConfirmComplete"
           />
@@ -352,16 +504,10 @@ onMounted(async () => {
         </div>
       </template>
     </n-modal>
-  </n-card>
+  </BaseCrudPage>
 </template>
 
 <style scoped>
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
 .modal-actions {
   display: flex;
   justify-content: flex-end;

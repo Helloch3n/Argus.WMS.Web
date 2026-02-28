@@ -1,4 +1,4 @@
-import axios, { AxiosError, type AxiosResponse } from 'axios'
+import { AxiosError, type AxiosResponse } from 'axios'
 import { http } from './http'
 
 /**
@@ -41,13 +41,13 @@ request.interceptors.response.use(
     const abpMessage = getAbpErrorMessage(response?.data)
 
     if (abpMessage) {
-      window.$message?.error(abpMessage)
+      ;(window as any).$message?.error(abpMessage)
       error.message = abpMessage
       return Promise.reject(error)
     }
 
     const fallback = getHttpErrorMessage(response?.status)
-    window.$message?.error(fallback)
+    ;(window as any).$message?.error(fallback)
     error.message = fallback
     return Promise.reject(error)
   },

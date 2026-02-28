@@ -25,6 +25,11 @@ import type { DataTableColumns, FormInst, FormRules } from 'naive-ui'
 
 import * as api from '@/api/wms/dataSyncTask'
 import type { DataSyncTaskDto, CreateUpdateDataSyncTaskDto } from '@/api/wms/dataSyncTask'
+import BaseCrudPage from '@/components/BaseCrudPage.vue'
+import TableColumnManager from '@/components/TableColumnManager.vue'
+import { useColumnConfig } from '@/composables/useColumnConfig'
+import { withResizable } from '@/utils/table'
+import { compareSortValue } from '@/utils/tableColumn'
 
 type TaskRow = DataSyncTaskDto
 
@@ -69,6 +74,10 @@ function onRefresh() {
   query.filter = ''
   query.page = 1
   loadData()
+}
+
+function onReset() {
+  onRefresh()
 }
 
 function handlePageChange(page: number) {
@@ -145,30 +154,52 @@ function formatDateTime(v?: string | null) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-// ---- 列定义 ----
-const columns = computed<DataTableColumns<TaskRow>>(() => [
-  {
-    title: '任务名称',
+const {
+  showColumnConfig,
+  columnSettings,
+  loadColumnSettings,
+  handleVisibleChange,
+  createDraggableTitle,
+} = useColumnConfig({
+  storageKey: 'data-sync-task-column-settings-v1',
+  preferredKeys: ['taskName', 'cronExpression', 'isEnabled', 'lastSyncTime', 'lastSyncStatus', 'lastSyncMessage'],
+  resolveTitle: (key) => {
+    if (key === 'taskName') return '任务名称'
+    if (key === 'cronExpression') return '执行频率'
+    if (key === 'isEnabled') return '启停'
+    if (key === 'lastSyncTime') return '上次执行时间'
+    if (key === 'lastSyncStatus') return '上次状态'
+    if (key === 'lastSyncMessage') return '日志/信息'
+    return key
+  },
+})
+
+const columnMap: Record<string, DataTableColumns<TaskRow>[number]> = {
+  taskName: {
+    title: createDraggableTitle('taskName', '任务名称'),
     key: 'taskName',
     minWidth: 220,
+    sorter: (a, b) => compareSortValue(a.taskName, b.taskName),
     render: (row) =>
       h('div', [
         h('span', row.taskName),
         h('span', { style: 'color: #999; font-size: 12px; margin-left: 6px' }, `(${row.taskCode})`),
       ]),
   },
-  {
-    title: '执行频率',
+  cronExpression: {
+    title: createDraggableTitle('cronExpression', '执行频率'),
     key: 'cronExpression',
     width: 160,
+    sorter: (a, b) => compareSortValue(a.cronExpression, b.cronExpression),
     render: (row) =>
       h('code', { style: 'font-size: 12px; background: #f5f5f5; padding: 2px 6px; border-radius: 4px' }, row.cronExpression),
   },
-  {
-    title: '启停',
+  isEnabled: {
+    title: createDraggableTitle('isEnabled', '启停'),
     key: 'isEnabled',
     width: 100,
     align: 'center',
+    sorter: (a, b) => compareSortValue(a.isEnabled, b.isEnabled),
     render: (row) =>
       h(NPopconfirm, {
         onPositiveClick: () => handleToggle(row, !row.isEnabled),
@@ -182,29 +213,40 @@ const columns = computed<DataTableColumns<TaskRow>>(() => [
         default: () => row.isEnabled ? '确认停用该任务？' : '确认启用该任务？',
       }),
   },
-  {
-    title: '上次执行时间',
+  lastSyncTime: {
+    title: createDraggableTitle('lastSyncTime', '上次执行时间'),
     key: 'lastSyncTime',
     width: 185,
+    sorter: (a, b) => compareSortValue(a.lastSyncTime, b.lastSyncTime),
     render: (row) => formatDateTime(row.lastSyncTime),
   },
-  {
-    title: '上次状态',
+  lastSyncStatus: {
+    title: createDraggableTitle('lastSyncStatus', '上次状态'),
     key: 'lastSyncStatus',
     width: 110,
     align: 'center',
+    sorter: (a, b) => compareSortValue(resolveSyncStatus(a.lastSyncStatus), resolveSyncStatus(b.lastSyncStatus)),
     render: (row) => {
       const s = resolveSyncStatus(row.lastSyncStatus)
       return h(NTag, { type: getSyncStatusTagType(s), size: 'small' }, { default: () => getSyncStatusLabel(s) })
     },
   },
-  {
-    title: '日志/信息',
+  lastSyncMessage: {
+    title: createDraggableTitle('lastSyncMessage', '日志/信息'),
     key: 'lastSyncMessage',
     minWidth: 200,
     ellipsis: { tooltip: true },
+    sorter: (a, b) => compareSortValue(a.lastSyncMessage, b.lastSyncMessage),
     render: (row) => row.lastSyncMessage ?? '-',
   },
+}
+
+// ---- 列定义 ----
+const columns = computed<DataTableColumns<TaskRow>>(() => withResizable([
+  ...columnSettings.value
+    .filter((item) => item.visible)
+    .map((item) => columnMap[item.key])
+    .filter((item): item is DataTableColumns<TaskRow>[number] => Boolean(item)),
   {
     title: '操作',
     key: 'actions',
@@ -247,7 +289,17 @@ const columns = computed<DataTableColumns<TaskRow>>(() => [
         ],
       }),
   },
-])
+]))
+
+function handleColumnConfigShowChange(value: boolean) {
+  showColumnConfig.value = value
+}
+
+function handleColumnVisibleChange(key: string, visible: boolean) {
+  if (!handleVisibleChange(key, visible)) {
+    message.warning('至少保留一个展示字段')
+  }
+}
 
 // ---- 弹窗 ----
 const dialogVisible = ref(false)
@@ -313,28 +365,54 @@ async function onSubmit() {
 }
 
 onMounted(() => {
+  loadColumnSettings()
   loadData()
 })
 </script>
 
 <template>
-  <div class="page">
-    <n-card :bordered="false">
-      <div class="toolbar">
-        <n-button type="primary" @click="openCreate">+ 新增同步任务</n-button>
-        <n-space :size="8" align="center">
+  <BaseCrudPage>
+    <template #search>
+      <n-form inline class="crud-search-form">
+        <n-form-item>
           <n-input
             v-model:value="query.filter"
-            placeholder="搜索任务名称"
+            placeholder="请输入任务名称"
             clearable
-            style="width: 220px"
+            style="max-width: 260px"
             @keyup.enter="onQuery"
           />
-          <n-button :loading="loading" @click="onRefresh">刷新</n-button>
-        </n-space>
-      </div>
+        </n-form-item>
+        <n-form-item class="crud-page-spacer" />
+        <n-form-item>
+          <n-button type="primary" :loading="loading" @click="onQuery">查询</n-button>
+        </n-form-item>
+        <n-form-item>
+          <n-button :loading="loading" @click="onReset">重置</n-button>
+        </n-form-item>
+      </n-form>
+    </template>
 
+    <template #actions-left>
+      <div class="crud-action-main">
+        <n-button type="primary" @click="openCreate">新增</n-button>
+      </div>
+    </template>
+
+    <template #actions-right>
+      <div class="crud-action-tools">
+        <TableColumnManager
+          :show="showColumnConfig"
+          :settings="columnSettings"
+          @update:show="handleColumnConfigShowChange"
+          @visible-change="handleColumnVisibleChange"
+        />
+      </div>
+    </template>
+
+    <template #data>
       <n-data-table
+        class="crud-table-flat"
         :loading="loading"
         :columns="columns"
         :data="rows"
@@ -342,22 +420,22 @@ onMounted(() => {
         size="small"
         striped
       />
+    </template>
 
-      <div class="pager">
-        <n-pagination
-          v-model:page="query.page"
-          v-model:page-size="query.pageSize"
-          :item-count="query.total"
-          :page-sizes="[10, 20, 50, 100]"
-          show-size-picker
-          @update:page="handlePageChange"
-          @update:page-size="handlePageSizeChange"
-        />
-      </div>
-    </n-card>
+    <template #pager-right>
+      <n-pagination
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :item-count="query.total"
+        :page-sizes="[10, 20, 50, 100]"
+        show-size-picker
+        @update:page="handlePageChange"
+        @update:page-size="handlePageSizeChange"
+      />
+    </template>
+  </BaseCrudPage>
 
-    <!-- 新增 / 编辑弹窗 -->
-    <n-modal v-model:show="dialogVisible">
+  <n-modal v-model:show="dialogVisible">
       <n-card
         :title="dialogMode === 'create' ? '新增同步任务' : '编辑同步任务'"
         style="width: 560px"
@@ -389,30 +467,10 @@ onMounted(() => {
           </div>
         </template>
       </n-card>
-    </n-modal>
-  </div>
+  </n-modal>
 </template>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 12px;
-}
-
 .modal-actions {
   display: flex;
   justify-content: flex-end;

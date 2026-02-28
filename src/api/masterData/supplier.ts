@@ -35,7 +35,8 @@ export interface GetSupplierListParams extends PagedAndSortedResultRequestDto {
   maxResultCount?: number
   skipCount?: number
   sorting?: string
-  filter?: string
+  supplierCode?: string
+  supplierName?: string
 }
 
 const baseUrl = '/api/app/supplier'

@@ -1,27 +1,61 @@
 <template>
-  <div class="page">
-    <n-card>
-      <div class="toolbar">
-        <n-input v-model:value="searchKeyword" placeholder="订单号 / 客户" clearable @keyup.enter="loadOrders" />
-        <div>
-          <n-button type="primary" @click="openCreate">新建</n-button>
-        </div>
+  <BaseCrudPage>
+    <template #search>
+      <n-form inline class="crud-search-form">
+        <n-form-item>
+          <n-input
+            v-model:value="searchKeyword"
+            placeholder="请输入订单号/客户"
+            clearable
+            style="max-width: 320px"
+            @keyup.enter="loadOrders"
+          />
+        </n-form-item>
+        <n-form-item class="crud-page-spacer" />
+        <n-form-item>
+          <n-button type="primary" :loading="loading" @click="loadOrders">查询</n-button>
+        </n-form-item>
+        <n-form-item>
+          <n-button @click="resetSearch">重置</n-button>
+        </n-form-item>
+      </n-form>
+    </template>
+
+    <template #actions-left>
+      <div class="crud-action-main">
+        <n-button type="primary" @click="openCreate">新增</n-button>
       </div>
-      <n-data-table :columns="columns" :data="orders" :bordered="false" :loading="loading" />
-      <div class="pager">
-        <n-pagination
-          v-model:page="pagination.page"
-          v-model:page-size="pagination.pageSize"
-          :item-count="pagination.itemCount"
-          show-size-picker
-          :page-sizes="[10,20,50]"
-          @update:page="loadOrders"
-          @update:page-size="handlePageSizeChange"
+    </template>
+
+    <template #actions-right>
+      <div class="crud-action-tools">
+        <TableColumnManager
+          :show="showColumnConfig"
+          :settings="columnSettings"
+          @update:show="handleColumnConfigShowChange"
+          @visible-change="handleColumnVisibleChange"
         />
       </div>
-    </n-card>
+    </template>
 
-    <n-modal v-model:show="createVisible" preset="card" title="新建出库单">
+    <template #data>
+      <n-data-table class="crud-table-flat" :columns="columns" :data="orders" :bordered="false" :loading="loading" />
+    </template>
+
+    <template #pager-right>
+      <n-pagination
+        v-model:page="pagination.page"
+        v-model:page-size="pagination.pageSize"
+        :item-count="pagination.itemCount"
+        show-size-picker
+        :page-sizes="[10,20,50]"
+        @update:page="loadOrders"
+        @update:page-size="handlePageSizeChange"
+      />
+    </template>
+  </BaseCrudPage>
+
+  <n-modal v-model:show="createVisible" preset="card" title="新建出库单">
       <n-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="100">
         <n-form-item label="来源单号" path="sourceOrderNo">
           <n-input v-model:value="createForm.sourceOrderNo" placeholder="请输入来源单号/外部单号" />
@@ -49,7 +83,7 @@
               />
               <n-button size="tiny" type="error" tertiary @click="removeItem(index)">删除</n-button>
             </div>
-            <n-button text @click="addItem">+ 新增行</n-button>
+            <n-button text @click="addItem">新增行</n-button>
           </div>
         </n-form-item>
       </n-form>
@@ -59,9 +93,9 @@
           <n-button type="primary" :loading="creating" @click="submitCreate">提交</n-button>
         </n-space>
       </template>
-    </n-modal>
+  </n-modal>
 
-    <n-drawer v-model:show="drawerVisible" placement="right" :width="640" :show-mask="false">
+  <n-drawer v-model:show="drawerVisible" placement="right" :width="640" :show-mask="false">
       <n-card title="订单详情" :bordered="false">
         <n-space vertical :size="16">
           <div>
@@ -86,15 +120,13 @@
           />
         </n-space>
       </n-card>
-    </n-drawer>
-  </div>
+  </n-drawer>
 </template>
 
 <script setup lang="ts">
-import { computed, h, reactive, ref } from 'vue'
+import { computed, h, onMounted, reactive, ref } from 'vue'
 import {
   NButton,
-  NCard,
   NDataTable,
   NDrawer,
   NEmpty,
@@ -111,6 +143,11 @@ import {
 import type { DataTableColumns, FormInst, FormRules, PaginationProps } from 'naive-ui'
 import * as outboundApi from '@/api/wms/outbound'
 import * as pickTaskApi from '@/api/wms/pickTask'
+import BaseCrudPage from '@/components/BaseCrudPage.vue'
+import TableColumnManager from '@/components/TableColumnManager.vue'
+import { useColumnConfig } from '@/composables/useColumnConfig'
+import { withResizable } from '@/utils/table'
+import { compareSortValue } from '@/utils/tableColumn'
 
 const message = useMessage()
 
@@ -172,15 +209,51 @@ function formatDateTime(v?: string) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-const columns = computed<DataTableColumns<outboundApi.OutboundOrderDto>>(() => [
-  { title: '订单号', key: 'orderNo', minWidth: 180 },
-  { title: '客户', key: 'customerName', minWidth: 180 },
-  { title: '来源单号', key: 'sourceOrderNo', minWidth: 180, render: (row) => row.sourceOrderNo || '-' },
-  {
-    title: '状态',
+const {
+  showColumnConfig,
+  columnSettings,
+  loadColumnSettings,
+  handleVisibleChange,
+  createDraggableTitle,
+} = useColumnConfig({
+  storageKey: 'outbound-order-column-settings-v1',
+  preferredKeys: ['orderNo', 'customerName', 'sourceOrderNo', 'status', 'creationTime'],
+  resolveTitle: (key) => {
+    if (key === 'orderNo') return '订单号'
+    if (key === 'customerName') return '客户'
+    if (key === 'sourceOrderNo') return '来源单号'
+    if (key === 'status') return '状态'
+    if (key === 'creationTime') return '创建时间'
+    return key
+  },
+})
+
+const columnMap: Record<string, DataTableColumns<outboundApi.OutboundOrderDto>[number]> = {
+  orderNo: {
+    title: createDraggableTitle('orderNo', '订单号'),
+    key: 'orderNo',
+    minWidth: 180,
+    sorter: (a, b) => compareSortValue(a.orderNo, b.orderNo),
+  },
+  customerName: {
+    title: createDraggableTitle('customerName', '客户'),
+    key: 'customerName',
+    minWidth: 180,
+    sorter: (a, b) => compareSortValue(a.customerName, b.customerName),
+  },
+  sourceOrderNo: {
+    title: createDraggableTitle('sourceOrderNo', '来源单号'),
+    key: 'sourceOrderNo',
+    minWidth: 180,
+    sorter: (a, b) => compareSortValue(a.sourceOrderNo, b.sourceOrderNo),
+    render: (row) => row.sourceOrderNo || '-',
+  },
+  status: {
+    title: createDraggableTitle('status', '状态'),
     key: 'status',
     width: 120,
     align: 'center',
+    sorter: (a, b) => compareSortValue(getStatusLabel(a.status), getStatusLabel(b.status)),
     render: (row) =>
       h(
         NTag,
@@ -188,7 +261,20 @@ const columns = computed<DataTableColumns<outboundApi.OutboundOrderDto>>(() => [
         { default: () => getStatusLabel(row.status) },
       ),
   },
-  { title: '创建时间', key: 'creationTime', minWidth: 200, render: (row) => formatDateTime(row.creationTime) },
+  creationTime: {
+    title: createDraggableTitle('creationTime', '创建时间'),
+    key: 'creationTime',
+    minWidth: 200,
+    sorter: (a, b) => compareSortValue(a.creationTime, b.creationTime),
+    render: (row) => formatDateTime(row.creationTime),
+  },
+}
+
+const columns = computed<DataTableColumns<outboundApi.OutboundOrderDto>>(() => withResizable([
+  ...columnSettings.value
+    .filter((item) => item.visible)
+    .map((item) => columnMap[item.key])
+    .filter((item): item is DataTableColumns<outboundApi.OutboundOrderDto>[number] => Boolean(item)),
   {
     title: '操作',
     key: 'actions',
@@ -201,7 +287,17 @@ const columns = computed<DataTableColumns<outboundApi.OutboundOrderDto>>(() => [
       h(NButton, { size: 'small', type: 'info', quaternary: true, onClick: () => openDrawer(row) }, { default: () => '详情' }),
     ],
   },
-])
+]))
+
+function handleColumnConfigShowChange(value: boolean) {
+  showColumnConfig.value = value
+}
+
+function handleColumnVisibleChange(key: string, visible: boolean) {
+  if (!handleVisibleChange(key, visible)) {
+    message.warning('至少保留一个展示字段')
+  }
+}
 
 const pickTaskLoading = ref(false)
 
@@ -370,6 +466,12 @@ function handlePageSizeChange(size: number) {
   loadOrders()
 }
 
+function resetSearch() {
+  searchKeyword.value = ''
+  pagination.page = 1
+  loadOrders()
+}
+
 function openCreate() {
   createVisible.value = true
 }
@@ -409,5 +511,11 @@ async function handleAllocate(row: outboundApi.OutboundOrderDto) {
   }
 }
 
-loadOrders()
+onMounted(() => {
+  loadColumnSettings()
+  loadOrders()
+})
 </script>
+
+<style scoped>
+</style>

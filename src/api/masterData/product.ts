@@ -35,10 +35,9 @@ export interface CreateUpdateProductDto {
 }
 
 export interface GetProductListParams extends PagedAndSortedResultRequestDto {
-  maxResultCount?: number
-  skipCount?: number
-  sorting?: string
   filter?: string
+  productCode?: string
+  productName?: string
 }
 
 const baseUrl = '/api/app/product'

@@ -17,22 +17,19 @@ export interface ReelDto {
   id?: string
   reelNo: string
   name: string
-  type: number
-  selfWeight?: number
-  maxWeight?: number
+  size?: string
+  selfWeight: number
   currentLocationId?: string
   currentLocationCode?: string
-  status?: number
-  remark?: string
-  isLocked?: boolean
+  status: number | string
+  isLocked: boolean
 }
 
 export interface CreateUpdateReelDto {
   reelNo?: string
   name: string
-  type: number
+  size?: string
   selfWeight: number
-  maxWeight?: number
   currentLocationId?: string
 }
 
@@ -45,6 +42,8 @@ export interface GetReelListParams extends PagedAndSortedResultRequestDto {
   skipCount?: number
   sorting?: string
   filter?: string
+  reelNo?: string
+  reelCode?: string
 }
 
 const baseUrl = '/api/app/reel'
@@ -60,9 +59,7 @@ export async function get(id: string) {
 }
 
 export async function create(data: CreateUpdateReelDto) {
-        debugger
   const res = await request.post<ReelDto>(baseUrl, data)
-  console.log(res)
   return res.data
 }
 

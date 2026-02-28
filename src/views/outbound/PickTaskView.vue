@@ -8,7 +8,6 @@ export default {
 import { computed, h, onMounted, reactive, ref } from 'vue'
 import {
   NButton,
-  NCard,
   NDataTable,
   NForm,
   NFormItem,
@@ -16,14 +15,17 @@ import {
   NPagination,
   NPopconfirm,
   NSelect,
-  NSpace,
   NTag,
   useMessage,
 } from 'naive-ui'
 import type { DataTableColumns, SelectOption } from 'naive-ui'
 import * as pickTaskApi from '@/api/wms/pickTask'
 import type { PickTaskDto } from '@/api/wms/pickTask'
+import TableColumnManager from '@/components/TableColumnManager.vue'
 import { withResizable } from '@/utils/table'
+import BaseCrudPage from '@/components/BaseCrudPage.vue'
+import { useColumnConfig } from '@/composables/useColumnConfig'
+import { compareSortValue } from '@/utils/tableColumn'
 
 type TaskRow = PickTaskDto
 
@@ -139,68 +141,102 @@ function formatDateTime(v?: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
+const {
+  showColumnConfig,
+  columnSettings,
+  loadColumnSettings,
+  handleVisibleChange,
+  createDraggableTitle,
+} = useColumnConfig({
+  storageKey: 'pick-task-column-settings-v1',
+  preferredKeys: ['reelNo', 'fromLocationCode', 'productCode', 'batchNo', 'sn', 'targetLength', 'status', 'creationTime'],
+  resolveTitle: (key) => {
+    if (key === 'reelNo') return '盘号'
+    if (key === 'fromLocationCode') return '源库位'
+    if (key === 'productCode') return '产品编码'
+    if (key === 'batchNo') return '批次号'
+    if (key === 'sn') return '唯一码/SN'
+    if (key === 'targetLength') return '目标长度'
+    if (key === 'status') return '状态'
+    if (key === 'creationTime') return '创建时间'
+    return key
+  },
+})
+
+const columnMap: Record<string, DataTableColumns<TaskRow>[number]> = {
+  reelNo: {
+    title: createDraggableTitle('reelNo', '盘号'),
+    key: 'reelNo',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.reelNo, b.reelNo),
+    render: (row) => row.reelNo || '-',
+  },
+  fromLocationCode: {
+    title: createDraggableTitle('fromLocationCode', '源库位'),
+    key: 'fromLocationCode',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.fromLocationCode, b.fromLocationCode),
+    render: (row) => row.fromLocationCode || '-',
+  },
+  productCode: {
+    title: createDraggableTitle('productCode', '产品编码'),
+    key: 'productCode',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.productCode, b.productCode),
+    render: (row) => row.productCode || '-',
+  },
+  batchNo: {
+    title: createDraggableTitle('batchNo', '批次号'),
+    key: 'batchNo',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.batchNo, b.batchNo),
+    render: (row) => row.batchNo || '-',
+  },
+  sn: {
+    title: createDraggableTitle('sn', '唯一码/SN'),
+    key: 'sn',
+    minWidth: 180,
+    sorter: (a, b) => compareSortValue(a.sn, b.sn),
+    render: (row) => (row.sn ? h(NTag, { type: 'primary', size: 'small' }, { default: () => row.sn }) : '-'),
+  },
+  targetLength: {
+    title: createDraggableTitle('targetLength', '目标长度'),
+    key: 'targetLength',
+    minWidth: 140,
+    align: 'right',
+    sorter: (a, b) => compareSortValue(a.targetLength, b.targetLength),
+    render: (row) => `${row.targetLength ?? 0} 米`,
+  },
+  status: {
+    title: createDraggableTitle('status', '状态'),
+    key: 'status',
+    width: 120,
+    align: 'center',
+    sorter: (a, b) => compareSortValue(getStatusLabel(resolveStatus(a.status)), getStatusLabel(resolveStatus(b.status))),
+    render: (row) => {
+      const status = resolveStatus(row.status)
+      return h(
+        NTag,
+        { type: getStatusTagType(status), size: 'small' },
+        { default: () => getStatusLabel(status) },
+      )
+    },
+  },
+  creationTime: {
+    title: createDraggableTitle('creationTime', '创建时间'),
+    key: 'creationTime',
+    minWidth: 185,
+    sorter: (a, b) => compareSortValue(a.creationTime, b.creationTime),
+    render: (row) => formatDateTime(row.creationTime),
+  },
+}
+
 const columns = computed<DataTableColumns<TaskRow>>(() =>
   withResizable([
-    {
-      title: '盘号',
-      key: 'reelNo',
-      minWidth: 160,
-      render: (row) => row.reelNo || '-',
-    },
-    {
-      title: '源库位',
-      key: 'fromLocationCode',
-      minWidth: 160,
-      render: (row) => row.fromLocationCode || '-',
-    },
-    {
-      title: '产品编码',
-      key: 'productCode',
-      minWidth: 160,
-      render: (row) => row.productCode || '-',
-    },
-    {
-      title: '批次号',
-      key: 'batchNo',
-      minWidth: 160,
-      render: (row) => row.batchNo || '-',
-    },
-    {
-      title: '唯一码/SN',
-      key: 'sn',
-      minWidth: 180,
-      render: (row) =>
-        row.sn
-          ? h(NTag, { type: 'primary', size: 'small' }, { default: () => row.sn })
-          : '-',
-    },
-    {
-      title: '目标长度',
-      key: 'targetLength',
-      minWidth: 140,
-      align: 'right',
-      render: (row) => `${row.targetLength ?? 0} 米`,
-    },
-    {
-      title: '状态',
-      key: 'status',
-      width: 120,
-      align: 'center',
-      render: (row) => {
-        const status = resolveStatus(row.status)
-        return h(
-          NTag,
-          { type: getStatusTagType(status), size: 'small' },
-          { default: () => getStatusLabel(status) },
-        )
-      },
-    },
-    {
-      title: '创建时间',
-      key: 'creationTime',
-      minWidth: 185,
-      render: (row) => formatDateTime(row.creationTime),
-    },
+    ...columnSettings.value
+      .filter((item) => item.visible)
+      .map((item) => columnMap[item.key])
+      .filter((item): item is DataTableColumns<TaskRow>[number] => Boolean(item)),
     {
       title: '操作',
       key: 'actions',
@@ -233,16 +269,27 @@ const columns = computed<DataTableColumns<TaskRow>>(() =>
   ]),
 )
 
+function handleColumnConfigShowChange(value: boolean) {
+  showColumnConfig.value = value
+}
+
+function handleColumnVisibleChange(key: string, visible: boolean) {
+  if (!handleVisibleChange(key, visible)) {
+    message.warning('至少保留一个展示字段')
+  }
+}
+
 onMounted(() => {
+  loadColumnSettings()
   loadData()
 })
 </script>
 
 <template>
-  <div class="page">
-    <n-card class="search-card" :bordered="false">
-      <n-form inline label-width="80">
-        <n-form-item label="盘号">
+  <BaseCrudPage>
+    <template #search>
+      <n-form inline class="crud-search-form">
+        <n-form-item>
           <n-input
             v-model:value="query.reelNo"
             placeholder="请输入盘号"
@@ -251,7 +298,7 @@ onMounted(() => {
             @keyup.enter="onQuery"
           />
         </n-form-item>
-        <n-form-item label="状态">
+        <n-form-item>
           <n-select
             v-model:value="query.status"
             :options="statusOptions"
@@ -260,42 +307,44 @@ onMounted(() => {
             style="width: 160px"
           />
         </n-form-item>
+        <n-form-item class="crud-page-spacer" />
         <n-form-item>
-          <n-space>
-            <n-button type="primary" :loading="loading" @click="onQuery">查询</n-button>
-            <n-button @click="onReset">重置</n-button>
-          </n-space>
+          <n-button type="primary" :loading="loading" @click="onQuery">查询</n-button>
+        </n-form-item>
+        <n-form-item>
+          <n-button @click="onReset">重置</n-button>
         </n-form-item>
       </n-form>
-    </n-card>
+    </template>
 
-    <n-card :bordered="false">
-      <n-data-table :loading="loading" :columns="columns" :data="rows" :bordered="false" />
-      <div class="pager">
-        <n-pagination
-          v-model:page="query.page"
-          v-model:page-size="query.pageSize"
-          :item-count="query.total"
-          :page-sizes="[10, 20, 50, 100]"
-          show-size-picker
-          @update:page="handlePageChange"
-          @update:page-size="handlePageSizeChange"
+    <template #actions-right>
+      <div class="crud-action-tools">
+        <TableColumnManager
+          :show="showColumnConfig"
+          :settings="columnSettings"
+          @update:show="handleColumnConfigShowChange"
+          @visible-change="handleColumnVisibleChange"
         />
       </div>
-    </n-card>
-  </div>
+    </template>
+
+    <template #data>
+      <n-data-table class="crud-table-flat" :loading="loading" :columns="columns" :data="rows" :bordered="false" />
+    </template>
+
+    <template #pager-right>
+      <n-pagination
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :item-count="query.total"
+        :page-sizes="[10, 20, 50, 100]"
+        show-size-picker
+        @update:page="handlePageChange"
+        @update:page-size="handlePageSizeChange"
+      />
+    </template>
+  </BaseCrudPage>
 </template>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 16px;
-}
 </style>

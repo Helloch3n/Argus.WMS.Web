@@ -8,8 +8,10 @@ import {
   NLayoutSider,
   NMenu,
   NButton,
+  NIcon,
   NDropdown,
 } from 'naive-ui'
+import { MenuOutline as MenuIcon, CloseOutline as CloseIcon, LogOutOutline as LogoutIcon } from '@vicons/ionicons5'
 import type { MenuOption } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import { useTabsStore } from '@/stores/tabs'
@@ -32,6 +34,8 @@ const menuOptions: MenuOption[] = [
       { label: '物料管理', key: '/master-data/product' },
       { label: '供应商管理', key: '/master-data/supplier' },
       { label: '仓库管理', key: '/master-data/warehouse' },
+      { label: '库区管理', key: '/master-data/zone' },
+      { label: '库位管理', key: '/master-data/location' },
       { label: '线盘管理', key: '/master-data/reel' },
     ],
   },
@@ -62,13 +66,16 @@ const menuOptions: MenuOption[] = [
     key: 'outbound',
     children: [
       { label: '出库作业', key: '/outbound/outbound' },
-      { label: '拣货执行 (PDA)', key: '/outbound/pick-task' },
+      { label: '拣货执行', key: '/outbound/pick-task' },
     ],
   },
   {
     label: '系统管理',
     key: 'system',
     children: [
+      { label: '角色管理', key: '/system/role' },
+      { label: '部门管理', key: '/system/organization-unit' },
+      { label: '用户管理', key: '/system/organization-unit-user' },
       { label: '数据同步中心', key: '/system/data-sync-task' },
     ],
   },
@@ -165,10 +172,28 @@ function toggleSider() {
     >
       <div class="logo-wrap">
         <div class="logo-icon">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" />
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-            <line x1="12" y1="22.08" x2="12" y2="12" />
+          <svg class="brand-warehouse" width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="warehouse-roof" x1="5" y1="4" x2="19" y2="10" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#c7d2fe" />
+                <stop offset="1" stop-color="#818cf8" />
+              </linearGradient>
+              <linearGradient id="warehouse-rack" x1="6" y1="10" x2="18" y2="19" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="#6366f1" />
+                <stop offset="1" stop-color="#4f46e5" />
+              </linearGradient>
+            </defs>
+
+            <path d="M4.6 9.4L12 4.2L19.4 9.4V18.4a1.1 1.1 0 0 1-1.1 1.1H5.7a1.1 1.1 0 0 1-1.1-1.1V9.4Z" fill="url(#warehouse-rack)" opacity="0.18" />
+            <path d="M4.6 9.4L12 4.2L19.4 9.4" stroke="url(#warehouse-roof)" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M6.3 9.8V18.5M9.2 9.8V18.5M12.1 9.8V18.5M15 9.8V18.5M17.7 9.8V18.5" stroke="#818cf8" stroke-opacity="0.55" stroke-width="0.9" />
+            <path d="M5.7 12.2H18.3M5.7 14.9H18.3M5.7 17.5H18.3" stroke="#a5b4fc" stroke-opacity="0.62" stroke-width="0.9" />
+            <rect x="6.6" y="12.7" width="2.1" height="1.5" rx="0.3" fill="#c7d2fe" />
+            <rect x="11" y="10.1" width="2.1" height="1.5" rx="0.3" fill="#e0e7ff" />
+            <rect x="14.9" y="15.2" width="2.1" height="1.5" rx="0.3" fill="#c7d2fe" />
+            <path class="warehouse-scan" d="M6.1 11.2H17.9" stroke="#eef2ff" stroke-width="1" stroke-linecap="round" />
+            <circle class="warehouse-beacon" cx="17.8" cy="6.4" r="1.1" fill="#eef2ff" />
+            <circle class="warehouse-beacon-ring" cx="17.8" cy="6.4" r="1.1" stroke="#c7d2fe" stroke-width="0.9" fill="none" />
           </svg>
         </div>
         <span class="logo-text" :class="{ hidden: isCollapsed }">Argus WMS</span>
@@ -190,11 +215,9 @@ function toggleSider() {
         <div class="header-left">
           <n-button class="collapse-btn" size="small" quaternary @click="toggleSider">
             <template #icon>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="4" y1="6" x2="20" y2="6" />
-                <line x1="10" y1="12" x2="20" y2="12" />
-                <line x1="14" y1="18" x2="20" y2="18" />
-              </svg>
+              <n-icon size="16">
+                <MenuIcon />
+              </n-icon>
             </template>
           </n-button>
 
@@ -214,9 +237,9 @@ function toggleSider() {
                   class="tab-close"
                   @click.stop="handleTabClose(tab.path)"
                 >
-                  <svg viewBox="0 0 12 12" width="12" height="12" fill="currentColor">
-                    <path d="M3.17 3.17a.5.5 0 0 1 .7 0L6 5.3l2.13-2.13a.5.5 0 0 1 .7.7L6.71 6l2.12 2.13a.5.5 0 0 1-.7.7L6 6.71 3.87 8.83a.5.5 0 0 1-.7-.7L5.3 6 3.17 3.87a.5.5 0 0 1 0-.7z" />
-                  </svg>
+                  <n-icon size="12" aria-hidden="true">
+                    <CloseIcon />
+                  </n-icon>
                 </span>
               </div>
             </div>
@@ -230,11 +253,9 @@ function toggleSider() {
           </div>
           <n-button size="small" quaternary type="error" @click="onLogout">
             <template #icon>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
+              <n-icon size="14" aria-hidden="true">
+                <LogoutIcon />
+              </n-icon>
             </template>
             退出
           </n-button>
@@ -307,14 +328,124 @@ function toggleSider() {
 }
 
 .logo-icon {
+  position: relative;
   width: 38px;
   height: 38px;
   border-radius: 11px;
-  background: rgba(59, 130, 246, 0.12);
+  background: linear-gradient(145deg, rgba(129, 140, 248, 0.2), rgba(99, 102, 241, 0.1));
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.logo-icon::before,
+.logo-icon::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 10px;
+  border: 1px solid rgba(129, 140, 248, 0.4);
+  transform: scale(0.84);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.logo-icon::before {
+  animation: logo-ripple 3s ease-out infinite;
+}
+
+.logo-icon::after {
+  animation: logo-ripple 3s ease-out 1.5s infinite;
+}
+
+.brand-warehouse {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.28));
+  transform-origin: center;
+  animation: warehouse-float 4.2s ease-in-out infinite;
+}
+
+.warehouse-scan {
+  animation: warehouse-scan-move 2.4s ease-in-out infinite;
+}
+
+.warehouse-beacon {
+  animation: warehouse-beacon-pulse 2.2s ease-in-out infinite;
+}
+
+.warehouse-beacon-ring {
+  animation: warehouse-ring-pulse 2.2s ease-out infinite;
+}
+
+@keyframes logo-ripple {
+  0% {
+    transform: scale(0.82);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.52;
+  }
+  72% {
+    opacity: 0.12;
+  }
+  100% {
+    transform: scale(1.38);
+    opacity: 0;
+  }
+}
+
+@keyframes warehouse-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1px);
+  }
+}
+
+@keyframes warehouse-scan-move {
+  0%,
+  20% {
+    opacity: 0;
+    transform: translateY(-0.5px);
+  }
+  50% {
+    opacity: 0.92;
+    transform: translateY(5px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(9px);
+  }
+}
+
+@keyframes warehouse-beacon-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes warehouse-ring-pulse {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.85);
+  }
 }
 
 .logo-text {

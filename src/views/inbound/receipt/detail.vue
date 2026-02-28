@@ -20,9 +20,12 @@ import {
 import type { DataTableColumns, FormInst, FormRules, InputInst, SelectOption } from 'naive-ui'
 
 import { withResizable } from '@/utils/table'
+import { compareSortValue } from '@/utils/tableColumn'
 import * as receiptApi from '@/api/inbound/receipt'
 import { getList as getReelList } from '@/api/masterData/reel'
 import { getList, getWithDetails } from '@/api/masterData/warehouse'
+import TableColumnManager from '@/components/TableColumnManager.vue'
+import { useColumnConfig } from '@/composables/useColumnConfig'
 
 const route = useRoute()
 const router = useRouter()
@@ -444,12 +447,33 @@ async function handleConfirmExecute() {
 }
 
 /* ---------- 表格 ---------- */
-const columns = computed<DataTableColumns<ReceiptDetailRow>>(() => withResizable([
-  {
-    title: '状态',
+const {
+  showColumnConfig,
+  columnSettings,
+  loadColumnSettings,
+  handleVisibleChange,
+  createDraggableTitle,
+} = useColumnConfig({
+  storageKey: 'receipt-detail-column-settings-v1',
+  preferredKeys: ['isReceived', 'reelNo', 'productName', 'planQuantity', 'actualQuantity', 'locationCode'],
+  resolveTitle: (key) => {
+    if (key === 'isReceived') return '状态'
+    if (key === 'reelNo') return '线盘号'
+    if (key === 'productName') return '产品'
+    if (key === 'planQuantity') return '计划数'
+    if (key === 'actualQuantity') return '实收数'
+    if (key === 'locationCode') return '库位'
+    return key
+  },
+})
+
+const columnMap: Record<string, DataTableColumns<ReceiptDetailRow>[number]> = {
+  isReceived: {
+    title: createDraggableTitle('isReceived', '状态'),
     key: 'isReceived',
     width: 100,
     align: 'center',
+    sorter: (a, b) => compareSortValue(a.isReceived, b.isReceived),
     render: (row) =>
       h(
         NTag,
@@ -457,21 +481,45 @@ const columns = computed<DataTableColumns<ReceiptDetailRow>>(() => withResizable
         { default: () => (row.isReceived ? '已完成' : '待收货') },
       ),
   },
-  { title: '线盘号', key: 'reelNo', minWidth: 160 },
-  { title: '产品', key: 'productName', minWidth: 200 },
-  { title: '计划数', key: 'planQuantity', width: 120 },
-  {
-    title: '实收数',
+  reelNo: {
+    title: createDraggableTitle('reelNo', '线盘号'),
+    key: 'reelNo',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.reelNo, b.reelNo),
+  },
+  productName: {
+    title: createDraggableTitle('productName', '产品'),
+    key: 'productName',
+    minWidth: 200,
+    sorter: (a, b) => compareSortValue(a.productName, b.productName),
+  },
+  planQuantity: {
+    title: createDraggableTitle('planQuantity', '计划数'),
+    key: 'planQuantity',
+    width: 120,
+    sorter: (a, b) => compareSortValue(a.planQuantity, b.planQuantity),
+  },
+  actualQuantity: {
+    title: createDraggableTitle('actualQuantity', '实收数'),
     key: 'actualQuantity',
     width: 120,
+    sorter: (a, b) => compareSortValue(a.actualQuantity, b.actualQuantity),
     render: (row) => (row.actualQuantity ?? 0),
   },
-  {
-    title: '库位',
+  locationCode: {
+    title: createDraggableTitle('locationCode', '库位'),
     key: 'locationCode',
     minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.locationCode, b.locationCode),
     render: (row) => row.locationCode ?? '-',
   },
+}
+
+const columns = computed<DataTableColumns<ReceiptDetailRow>>(() => withResizable([
+  ...columnSettings.value
+    .filter((item) => item.visible)
+    .map((item) => columnMap[item.key])
+    .filter((item): item is DataTableColumns<ReceiptDetailRow>[number] => Boolean(item)),
   {
     title: '操作',
     key: 'actions',
@@ -488,11 +536,22 @@ const columns = computed<DataTableColumns<ReceiptDetailRow>>(() => withResizable
   },
 ]))
 
+function handleColumnConfigShowChange(value: boolean) {
+  showColumnConfig.value = value
+}
+
+function handleColumnVisibleChange(key: string, visible: boolean) {
+  if (!handleVisibleChange(key, visible)) {
+    message.warning('至少保留一个展示字段')
+  }
+}
+
 function goBack() {
   router.push({ name: 'ReceiptList' })
 }
 
 onMounted(async () => {
+  loadColumnSettings()
   await refreshData()
   await loadWarehouseOptions()
   await loadLocationOptions()
@@ -569,7 +628,15 @@ onMounted(async () => {
 
     <!-- Table -->
     <n-card :bordered="false">
-      <n-data-table :loading="loading" :columns="columns" :data="details" :bordered="false" />
+      <div class="table-toolbar">
+        <TableColumnManager
+          :show="showColumnConfig"
+          :settings="columnSettings"
+          @update:show="handleColumnConfigShowChange"
+          @visible-change="handleColumnVisibleChange"
+        />
+      </div>
+      <n-data-table class="crud-table-flat" :loading="loading" :columns="columns" :data="details" :bordered="false" />
     </n-card>
 
     <!-- Modal -->
@@ -648,12 +715,12 @@ onMounted(async () => {
 .page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .header {
   display: flex;
-  gap: 16px;
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
 }
@@ -666,7 +733,7 @@ onMounted(async () => {
   width: 320px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .progress-text {
@@ -676,8 +743,14 @@ onMounted(async () => {
 .scanner-bar {
   display: grid;
   grid-template-columns: 1fr 220px 280px auto;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
+}
+
+.table-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
 }
 
 .modal-actions {

@@ -3,7 +3,6 @@ import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   NButton,
-  NCard,
   NDataTable,
   NForm,
   NFormItem,
@@ -17,6 +16,10 @@ import type { DataTableColumns, SelectOption } from 'naive-ui'
 
 import { withResizable } from '@/utils/table'
 import * as receiptApi from '@/api/inbound/receipt'
+import BaseCrudPage from '@/components/BaseCrudPage.vue'
+import TableColumnManager from '@/components/TableColumnManager.vue'
+import { useColumnConfig } from '@/composables/useColumnConfig'
+import { compareSortValue } from '@/utils/tableColumn'
 import CreateReceiptModal from '@/views/inbound/receipt/components/CreateReceiptModal.vue'
 
 type ReceiptRow = receiptApi.Receipt & {
@@ -76,6 +79,14 @@ async function loadData() {
 }
 
 function onQuery() {
+  query.page = 1
+  loadData()
+}
+
+function onReset() {
+  query.billNo = ''
+  query.sourceBillNo = ''
+  query.status = null
   query.page = 1
   loadData()
 }
@@ -140,32 +151,71 @@ function onCreate() {
   createVisible.value = true
 }
 
-const columns = computed<DataTableColumns<ReceiptRow>>(() => withResizable([
-  { title: '单据号', key: 'billNo', minWidth: 160 },
-  {
-    title: '类型',
+const {
+  showColumnConfig,
+  columnSettings,
+  loadColumnSettings,
+  handleVisibleChange,
+  createDraggableTitle,
+} = useColumnConfig({
+  storageKey: 'receipt-list-column-settings-v1',
+  preferredKeys: ['billNo', 'type', 'status', 'sourceBillNo', 'creationTime'],
+  resolveTitle: (key) => {
+    if (key === 'billNo') return '单据号'
+    if (key === 'type') return '类型'
+    if (key === 'status') return '状态'
+    if (key === 'sourceBillNo') return '来源单号'
+    if (key === 'creationTime') return '创建时间'
+    return key
+  },
+})
+
+const columnMap: Record<string, DataTableColumns<ReceiptRow>[number]> = {
+  billNo: {
+    title: createDraggableTitle('billNo', '单据号'),
+    key: 'billNo',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.billNo, b.billNo),
+  },
+  type: {
+    title: createDraggableTitle('type', '类型'),
     key: 'type',
     width: 140,
     align: 'center',
+    sorter: (a, b) => compareSortValue(resolveType(a.type), resolveType(b.type)),
     render: (row) => h(NTag, { size: 'small' }, { default: () => resolveType(row.type) }),
   },
-  {
-    title: '状态',
+  status: {
+    title: createDraggableTitle('status', '状态'),
     key: 'status',
     width: 140,
     align: 'center',
+    sorter: (a, b) => compareSortValue(resolveStatus(a.status), resolveStatus(b.status)),
     render: (row) => {
       const status = resolveStatus(row.status)
       return h(NTag, { type: getStatusTagType(status), size: 'small' }, { default: () => status })
     },
   },
-  { title: '来源单号', key: 'sourceBillNo', minWidth: 160 },
-  {
-    title: '创建时间',
+  sourceBillNo: {
+    title: createDraggableTitle('sourceBillNo', '来源单号'),
+    key: 'sourceBillNo',
+    minWidth: 160,
+    sorter: (a, b) => compareSortValue(a.sourceBillNo, b.sourceBillNo),
+  },
+  creationTime: {
+    title: createDraggableTitle('creationTime', '创建时间'),
     key: 'creationTime',
     minWidth: 180,
+    sorter: (a, b) => compareSortValue(a.creationTime ?? a.createdTime, b.creationTime ?? b.createdTime),
     render: (row) => formatDateTime(row.creationTime ?? row.createdTime),
   },
+}
+
+const columns = computed<DataTableColumns<ReceiptRow>>(() => withResizable([
+  ...columnSettings.value
+    .filter((item) => item.visible)
+    .map((item) => columnMap[item.key])
+    .filter((item): item is DataTableColumns<ReceiptRow>[number] => Boolean(item)),
   {
     title: '操作',
     key: 'actions',
@@ -176,74 +226,87 @@ const columns = computed<DataTableColumns<ReceiptRow>>(() => withResizable([
   },
 ]))
 
+function handleColumnConfigShowChange(value: boolean) {
+  showColumnConfig.value = value
+}
+
+function handleColumnVisibleChange(key: string, visible: boolean) {
+  if (!handleVisibleChange(key, visible)) {
+    message.warning('至少保留一个展示字段')
+  }
+}
+
 onMounted(() => {
+  loadColumnSettings()
   loadData()
 })
 </script>
 
 <template>
-  <div class="page">
-    <n-card :bordered="false">
-      <div class="search-row">
-        <n-form inline label-width="90" style="flex: 1">
-          <n-form-item label="单据号">
-            <n-input v-model:value="query.billNo" placeholder="单据号" clearable />
-          </n-form-item>
-          <n-form-item label="来源单号">
-            <n-input v-model:value="query.sourceBillNo" placeholder="来源单号" clearable />
-          </n-form-item>
-          <n-form-item label="状态">
-            <n-select
-              v-model:value="query.status"
-              :options="statusOptions"
-              placeholder="请选择"
-              clearable
-              style="width: 160px"
-            />
-          </n-form-item>
-          <n-form-item>
-            <n-button type="primary" :loading="loading" @click="onQuery">查询</n-button>
-          </n-form-item>
-        </n-form>
-        <n-button type="primary" @click="onCreate">新增入库</n-button>
-      </div>
-    </n-card>
+  <BaseCrudPage>
+    <template #search>
+      <n-form inline class="crud-search-form">
+        <n-form-item>
+          <n-input v-model:value="query.billNo" placeholder="请输入单据号" clearable />
+        </n-form-item>
+        <n-form-item>
+          <n-input v-model:value="query.sourceBillNo" placeholder="请输入来源单号" clearable />
+        </n-form-item>
+        <n-form-item>
+          <n-select
+            v-model:value="query.status"
+            :options="statusOptions"
+            placeholder="请选择状态"
+            clearable
+            style="width: 160px"
+          />
+        </n-form-item>
+        <n-form-item class="crud-page-spacer" />
+        <n-form-item>
+          <n-button type="primary" :loading="loading" @click="onQuery">查询</n-button>
+        </n-form-item>
+        <n-form-item>
+          <n-button @click="onReset">重置</n-button>
+        </n-form-item>
+      </n-form>
+    </template>
 
-    <n-card :bordered="false">
-      <n-data-table :loading="loading" :columns="columns" :data="rows" :bordered="false" />
-      <div class="pager">
-        <n-pagination
-          v-model:page="query.page"
-          v-model:page-size="query.pageSize"
-          :item-count="query.total"
-          :page-sizes="[10, 20, 50, 100]"
-          show-size-picker
-          @update:page="handlePageChange"
-          @update:page-size="handlePageSizeChange"
+    <template #actions-left>
+      <div class="crud-action-main">
+        <n-button type="primary" @click="onCreate">新增</n-button>
+      </div>
+    </template>
+
+    <template #actions-right>
+      <div class="crud-action-tools">
+        <TableColumnManager
+          :show="showColumnConfig"
+          :settings="columnSettings"
+          @update:show="handleColumnConfigShowChange"
+          @visible-change="handleColumnVisibleChange"
         />
       </div>
-    </n-card>
+    </template>
+
+    <template #data>
+      <n-data-table class="crud-table-flat" :loading="loading" :columns="columns" :data="rows" :bordered="false" />
+    </template>
+
+    <template #pager-right>
+      <n-pagination
+        v-model:page="query.page"
+        v-model:page-size="query.pageSize"
+        :item-count="query.total"
+        :page-sizes="[10, 20, 50, 100]"
+        show-size-picker
+        @update:page="handlePageChange"
+        @update:page-size="handlePageSizeChange"
+      />
+    </template>
 
     <CreateReceiptModal v-model:show="createVisible" @success="loadData" />
-  </div>
+  </BaseCrudPage>
 </template>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.search-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 16px;
-}
 </style>

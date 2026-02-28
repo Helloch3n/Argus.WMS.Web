@@ -11,29 +11,46 @@ export interface PagedAndSortedResultRequestDto {
   sorting?: string
 }
 
+export const ZoneType = {
+  Storage: 0,
+  Receiving: 1,
+  Shipping: 2,
+} as const
+
+export type ZoneType = (typeof ZoneType)[keyof typeof ZoneType]
+
 export interface ZoneDto {
-  id?: string
+  id: string
+  warehouseId: string
   code: string
   name: string
   zoneType: number
-  warehouseId: string
+  creationTime?: string
+  creatorId?: string
+  lastModificationTime?: string
+  lastModifierId?: string
 }
 
 export interface CreateUpdateZoneDto {
+  warehouseId: string
   code: string
   name: string
   zoneType: number
-  warehouseId: string
 }
 
-export interface GetZoneListParams extends PagedAndSortedResultRequestDto {
-  filter?: string
-  warehouseId?: string
+export interface ZonePagedQueryDto extends PagedAndSortedResultRequestDto {
+  zoneCode?: string
+  zoneName?: string
+  warehouseCode?: string
+  warehouseName?: string
 }
+
+// 兼容旧命名
+export type GetZoneListParams = ZonePagedQueryDto
 
 const baseUrl = '/api/app/zone'
 
-export async function getList(params?: GetZoneListParams) {
+export async function getList(params?: ZonePagedQueryDto) {
   const res = await request.get<PagedResultDto<ZoneDto>>(baseUrl, { params })
   return res.data
 }

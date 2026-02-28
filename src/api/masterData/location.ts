@@ -11,10 +11,29 @@ export interface PagedAndSortedResultRequestDto {
   sorting?: string
 }
 
+export const LocationType = {
+  Dock: 10,
+  Storage: 20,
+  LineSide: 30,
+  QC: 40,
+  Outbound: 50,
+} as const
+
+export type LocationType = (typeof LocationType)[keyof typeof LocationType]
+
+export const LocationStatus = {
+  Idle: 0,
+  Partial: 10,
+  Full: 20,
+  Locked: 30,
+} as const
+
+export type LocationStatus = (typeof LocationStatus)[keyof typeof LocationStatus]
+
 export interface LocationDto {
-  id?: string
-  zoneId: string
+  id: string
   warehouseId: string
+  zoneId: string
   code: string
   aisle: string
   rack: string
@@ -27,12 +46,16 @@ export interface LocationDto {
   status: number
   allowMixedProducts: boolean
   allowMixedBatches: boolean
+  creationTime?: string
+  creatorId?: string
+  lastModificationTime?: string
+  lastModifierId?: string
 }
 
 /** 创建/更新 DTO — 不含 status（后端不接受外部传入 status） */
 export interface CreateUpdateLocationDto {
-  zoneId: string
   warehouseId: string
+  zoneId: string
   code: string
   aisle: string
   rack: string
@@ -54,17 +77,22 @@ export interface BatchCreateLocationDto {
   levelCount: number
 }
 
-export interface GetLocationListParams extends PagedAndSortedResultRequestDto {
-  maxResultCount?: number
-  skipCount?: number
-  sorting?: string
+export interface LocationPagedQueryDto extends PagedAndSortedResultRequestDto {
   filter?: string
   zoneId?: string
+  zoneCode?: string
+  zoneName?: string
+  warehouseCode?: string
+  warehouseName?: string
+  locationCode?: string
 }
+
+// 兼容旧命名
+export type GetLocationListParams = LocationPagedQueryDto
 
 const baseUrl = '/api/app/location'
 
-export async function getList(params: GetLocationListParams) {
+export async function getList(params: LocationPagedQueryDto) {
   const res = await request.get<PagedResultDto<LocationDto>>(baseUrl, { params })
   return res.data
 }
